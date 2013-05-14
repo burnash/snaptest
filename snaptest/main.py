@@ -11,7 +11,7 @@ import requests
 import unittest
 
 
-SNAP_DIRNAME = '.snaptest'
+SNAP_DIRNAME = os.path.expanduser('~/.snaptest')
 
 
 class ResponseTest(unittest.TestCase):
@@ -25,6 +25,16 @@ class ResponseTest(unittest.TestCase):
         self.assertEqual(self.local_data, self.remote_data)
 
 
+class Client(object):
+    def __init__(self, headers=None):
+        self.headers = headers
+
+    def get(self, url):
+        r = requests.get(url, headers=self.headers)
+
+        return r.json()
+
+
 def get_local_name(url):
     parsed = urlparse.urlparse(url)
     path_parts = [s for s in parsed.path.split('/') if s]
@@ -34,12 +44,6 @@ def get_local_name(url):
     path_parts.append('json')
 
     return os.path.join(SNAP_DIRNAME, ".".join(path_parts))
-
-
-def read_url(url):
-    r = requests.get(url)
-
-    return r.json()
 
 
 def write_data(filename, data):
@@ -52,6 +56,13 @@ def write_data(filename, data):
         json.dump(data, f, indent=4)
 
 
+def read_config(snap_dirname):
+    config_filename = os.path.join(snap_dirname, 'config.json')
+
+    with open(config_filename) as f:
+        return json.load(f)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Memorize and compare http responses')
@@ -62,12 +73,21 @@ def main():
 
     filename = get_local_name(args.url)
 
+    config = read_config(SNAP_DIRNAME)
+
+    try:
+        headers = config['session']['headers']
+    except KeyError:
+        headers = None
+
+    client = Client(headers=headers)
+
     try:
         f = open(filename)
         print "reading", filename, '...'
         local_data = json.load(f)
 
-        remote_data = read_url(args.url)
+        remote_data = client.get(args.url)
 
         suite = unittest.TestSuite()
         suite.addTest(ResponseTest("test_equal", local_data, remote_data))
@@ -76,7 +96,7 @@ def main():
     except IOError:
         print filename, 'not found. reading url'
 
-        data = read_url(args.url)
+        data = client.get(args.url)
         write_data(filename, data)
 
     sys.exit(0)
